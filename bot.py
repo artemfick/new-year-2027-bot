@@ -7,6 +7,9 @@
   eve       — 31 декабря в 20:00 МСК: стикер «С наступающим Новым годом!»
   togliatti — 1 января в 00:00 по Тольятти (GMT+4): текст + стикер «С Новым годом!»
   moscow    — то же поздравление для Москвы (обычно вызывается из countdown)
+  say       — сразу отправить свой текст (SAY_TEXT) от имени бота
+
+Ручной запуск может задать TO_CHATS — тогда отправка только туда, а не во все CHAT_IDS.
 
 Служебное:
   python bot.py chats — показать chat_id чатов, где бот видел сообщения
@@ -113,7 +116,7 @@ def run(mode):
         print(f"[{mode}] на {target.astimezone(MSK):%d.%m %H:%M} МСК отправлять нечего.")
         return
 
-    chat_ids = [c.strip() for c in env("CHAT_IDS", required=True).split(",") if c.strip()]
+    chat_ids = get_chat_ids()
     stickers = call("getStickerSet", name=env("STICKER_SET", required=True))["stickers"]
     if len(stickers) <= IDX_NEW_YEAR:
         sys.exit(f"В паке {len(stickers)} стикеров, а нужно минимум {IDX_NEW_YEAR + 1}. Пак изменился?")
@@ -124,6 +127,17 @@ def run(mode):
         time.sleep(wait)
 
     failed = []
+    send_all(mode, chat_ids, actions, stickers)
+
+
+def get_chat_ids():
+    """Кому отправлять: TO_CHATS (если задано при ручном запуске), иначе CHAT_IDS."""
+    raw = env("TO_CHATS") or env("CHAT_IDS", required=True)
+    return [c.strip() for c in raw.split(",") if c.strip()]
+
+
+def send_all(mode, chat_ids, actions, stickers=None):
+    failed = []
     for cid in chat_ids:
         try:
             for kind, value in actions:
@@ -131,12 +145,20 @@ def run(mode):
                     call("sendMessage", chat_id=cid, text=value)
                 else:
                     call("sendSticker", chat_id=cid, sticker=stickers[value]["file_id"])
-            print(f"[{mode}] отправил в {cid}: {actions}")
+            print(f"[{mode}] отправил в {cid}")
         except Exception as e:  # один сломанный чат не мешает остальным
             print(f"[{mode}] не смог отправить в {cid}: {e}")
             failed.append(cid)
     if failed:
         sys.exit(f"Ошибки в чатах: {', '.join(failed)}")
+
+
+def cmd_say():
+    """Сообщение от имени бота: текст из SAY_TEXT, отправка сразу."""
+    text = env("SAY_TEXT").replace("\\n", "\n")
+    if not text:
+        sys.exit("Пустой текст — нечего отправлять.")
+    send_all("say", get_chat_ids(), [("text", text)])
 
 
 def cmd_chats():
@@ -163,5 +185,7 @@ if __name__ == "__main__":
         cmd_chats()
     elif mode == "list":
         cmd_list()
+    elif mode == "say":
+        cmd_say()
     else:
         run(mode)
