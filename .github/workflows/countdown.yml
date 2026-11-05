@@ -6,13 +6,21 @@ on:
     - cron: "25 20 * * *"    # каждый день 23:25 МСК → ждёт 00:00 МСК, шлёт стикер дня
     - cron: "30 16 31 12 *"  # 31 дек 19:30 МСК → ждёт 20:00 МСК, «С наступающим»
     - cron: "20 19 31 12 *"  # 31 дек 22:20 МСК → ждёт 00:00 по Тольятти (23:00 МСК)
-  workflow_dispatch:         # ручной запуск для проверки (отправляет сразу)
+  workflow_dispatch:         # ручной запуск (отправляет сразу)
     inputs:
       mode:
-        description: "Что отправить"
+        description: "Что отправить (say — свой текст)"
         type: choice
-        default: countdown
-        options: [countdown, eve, togliatti, moscow]
+        default: say
+        options: [say, countdown, eve, togliatti, moscow]
+      text:
+        description: "Текст для say (новая строка — \\n)"
+        type: string
+        required: false
+      to:
+        description: "Кому (id через запятую). Пусто — всем"
+        type: string
+        required: false
 
 jobs:
   send:
@@ -25,12 +33,15 @@ jobs:
           python-version: "3.12"
       - name: Pick mode
         id: pick
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ inputs.mode }}
         run: |
-          case "${{ github.event.schedule }}" in
+          case "$SCHEDULE" in
             "30 16 31 12 *") m=eve ;;
             "20 19 31 12 *") m=togliatti ;;
             "25 20 * * *")   m=countdown ;;
-            *)               m="${{ inputs.mode }}" ;;
+            *)               m="$INPUT_MODE" ;;
           esac
           echo "mode=$m" >> "$GITHUB_OUTPUT"
       - name: Send
@@ -39,4 +50,7 @@ jobs:
           CHAT_IDS: ${{ secrets.CHAT_IDS }}
           STICKER_SET: ${{ vars.STICKER_SET }}
           MANUAL: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
-        run: python bot.py ${{ steps.pick.outputs.mode }}
+          SAY_TEXT: ${{ inputs.text }}
+          TO_CHATS: ${{ inputs.to }}
+          MODE: ${{ steps.pick.outputs.mode }}
+        run: python bot.py "$MODE"
